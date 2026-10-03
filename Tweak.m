@@ -1,46 +1,52 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-@interface UIWindow (SafeBlockSearch)
-@end
+// נטרול הפוקוס של מקלדת החיפוש - מונע את פתיחת החיפוש הגלובלי
+@implementation UITextField (BlockGlobalSearch)
 
-@implementation UIWindow (SafeBlockSearch)
-
-- (UIView *)safe_swizzled_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    // וידוא שהחלון מוכן ותקין
-    if (self.hidden || self.alpha <= 0.01) {
-        return [self safe_swizzled_hitTest:point withEvent:event];
-    }
-
-    // בדיקה האם יש חלון מודאלי פתוח (כגון שיתוף / העברת הודעה)
-    BOOL hasModal = NO;
-    UIViewController *root = self.rootViewController;
-    if (root != nil && root.presentedViewController != nil) {
-        hasModal = YES;
-    }
-
-    // אם אנחנו במסך הראשי ללא מסך מודאלי, חוסמים את אזור החיפוש העליון באייפון 11
-    if (!hasModal) {
-        if (point.y >= 44 && point.y <= 140) {
-            // מבטל את המגע - מחזיר nil כדי ששום רכיב לא יקבל את הלחיצה
-            return nil;
++ (void)load {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        Class class = [self class];
+        
+        SEL originalSelector = @selector(becomeFirstResponder);
+        SEL swizzledSelector = @selector(custom_becomeFirstResponder);
+        
+        Method originalMethod = class_getInstanceMethod(class, originalSelector);
+        Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
+        
+        if (originalMethod && swizzledMethod) {
+            method_exchangeImplementations(originalMethod, swizzledMethod);
         }
-    }
+    });
+}
 
-    return [self safe_swizzled_hitTest:point withEvent:event];
+- (BOOL)custom_becomeFirstResponder {
+    // בדיקה האם מדובר בשדה חיפוש של המסך הראשי
+    NSString *className = NSStringFromClass([self class]);
+    UIView *superV = self.superview;
+    NSString *superClassName = superV ? NSStringFromClass([superV class]) : @"";
+    
+    // אם הרכיב קשור ל-Search של המסך הראשי (UISearchBar / SearchField)
+    if ([className containsString:@"Search"] || [superClassName containsString:@"Search"]) {
+        // בודק אם אנחנו במסך ראשי ולא בחלון שיתוף/העברה
+        UIResponder *responder = self;
+        while (responder.nextResponder) {
+            responder = responder.nextResponder;
+            if ([responder isKindOfClass:[UIViewController class]]) {
+                UIViewController *vc = (UIViewController *)responder;
+                // אם זה מסך מודאלי (Forward/Share), נאפשר חיפוש
+                if (vc.presentingViewController != nil) {
+                    return [self custom_becomeFirstResponder];
+                }
+                break;
+            }
+        }
+        // חסימת פתיחת המקלדת עבור חיפוש ראשי
+        return NO;
+    }
+    
+    return [self custom_becomeFirstResponder];
 }
 
 @end
-
-__attribute__((constructor)) static void initSafeTweak(void) {
-    Class class = [UIWindow class];
-    SEL originalSelector = @selector(hitTest:withEvent:);
-    SEL swizzledSelector = @selector(safe_swizzled_hitTest:withEvent:);
-
-    Method originalMethod = class_getInstanceMethod(class, originalSelector);
-    Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
-
-    if (originalMethod && swizzledMethod) {
-        method_exchangeImplementations(originalMethod, swizzledMethod);
-    }
-}
