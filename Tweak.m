@@ -1,34 +1,45 @@
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
 
-@interface UIWindow (BlockSearch)
+@interface SearchBlockerView : UIView
 @end
 
-@implementation UIWindow (BlockSearch)
+@implementation SearchBlockerView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    return self;
+}
+@end
 
-- (UIView *)swizzled_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIViewController *root = self.rootViewController;
-    
-    // אם לא מוצג חלון מודאלי חיצוני (כמו מסך העברה/שיתוף)
-    if (root.presentedViewController == nil) {
-        // טווח הגובה של שורת החיפוש העליונה באייפון 11
-        if (point.y >= 44 && point.y <= 135) {
-            return nil; // מבטל לחלוטין את המגע באזור הזה
+static void applyBlocker(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = nil;
+        for (UIWindow *window in [UIApplication sharedApplication].windows) {
+            if (window.isKeyWindow) {
+                keyWindow = window;
+                break;
+            }
         }
-    }
-    
-    return [self swizzled_hitTest:point withEvent:event];
+        if (!keyWindow && [UIApplication sharedApplication].windows.count > 0) {
+            keyWindow = [UIApplication sharedApplication].windows.firstObject;
+        }
+        
+        if (keyWindow) {
+            CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
+            SearchBlockerView *blocker = [[SearchBlockerView alloc] initWithFrame:CGRectMake(0, 44, screenWidth, 80)];
+            blocker.backgroundColor = [UIColor clearColor];
+            blocker.userInteractionEnabled = YES;
+            blocker.tag = 999988;
+            
+            [[keyWindow viewWithTag:999988] removeFromSuperview];
+            [keyWindow addSubview:blocker];
+        }
+    });
 }
 
-@end
-
 __attribute__((constructor)) static void init(void) {
-    Class class = [UIWindow class];
-    SEL originalSelector = @selector(hitTest:withEvent:);
-    SEL swizzledSelector = @selector(swizzled_hitTest:withEvent:);
-
-    Method originalMethod = class_getInstanceMethod(class, originalSelector);
-    Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
-
-    method_exchangeImplementations(originalMethod, swizzledMethod);
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                      object:nil
+                                                       queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification * _Nonnull note) {
+        applyBlocker();
+    }];
 }
