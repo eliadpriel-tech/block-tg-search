@@ -1,34 +1,25 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-@interface DummyBlockerView : UIView
-@end
-
-@implementation DummyBlockerView
-@end
-
 @implementation UIWindow (BlockSearchArea)
 
 - (UIView *)block_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [self block_hitTest:point withEvent:event];
     
-    // בדיקה האם יש חלון מודאלי פתוח (שיתוף / העברת הודעה)
+    // אם נפתח חלון מעל המסך (שיתוף / העברת הודעה), מאפשרים שימוש כרגיל
     UIViewController *root = self.rootViewController;
     if (root != nil && root.presentedViewController != nil) {
-        return hitView; // מאפשר שימוש רגיל אם נפתח חלון מעל המסך
+        return hitView;
     }
     
-    // שורת החיפוש של טלגרם באייפון 11 ממוקמת מתחת ל-Notch (בין Y=50 ל-Y=105)
-    // כפתור התחל נמצא בתחתית (מעל Y=600), ורשימת השיחות מתחת ל-Y=105
-    if (point.y >= 50 && point.y <= 105) {
-        static DummyBlockerView *dummyView = nil;
+    // חסימת אזור שורת החיפוש באייפון 11 (מתחת ל-Notch, בין 50 ל-105 פיקסלים)
+    if (point.y >= 50.0 && point.y <= 105.0) {
+        static UIView *dummyView = nil;
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            dummyView = [[DummyBlockerView alloc] initWithFrame:CGRectZero];
+            dummyView = [[UIView alloc] initWithFrame:CGRectZero];
             dummyView.userInteractionEnabled = NO;
         });
-        
-        // החזרת View שקט שאינו מקבל אירועים - בולע את הנגיעה מבלי לרסק את ה-hitTest של החלון
         return dummyView;
     }
     
