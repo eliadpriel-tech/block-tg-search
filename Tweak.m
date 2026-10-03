@@ -6,7 +6,7 @@
 - (UIView *)block_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [self block_hitTest:point withEvent:event];
     
-    // אם נפתח חלון מעל המסך (שיתוף / העברת הודעה), מאפשרים שימוש כרגיל
+    // אם נפתח חלון מודאלי מעל המסך (שיתוף / העברת הודעה), מאפשרים לחיצות כרגיל
     UIViewController *root = self.rootViewController;
     if (root != nil && root.presentedViewController != nil) {
         return hitView;
@@ -17,7 +17,8 @@
         static UIView *dummyView = nil;
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            dummyView = [[UIView alloc] initWithFrame:CGRectZero];
+            CGRect zeroRect = (CGRect){{0, 0}, {0, 0}};
+            dummyView = [[UIView alloc] initWithFrame:zeroRect];
             dummyView.userInteractionEnabled = NO;
         });
         return dummyView;
