@@ -1,0 +1,27 @@
+name: Build Dylib
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Compile Dylib
+        run: |
+          xcrun -sdk iphoneos clang -arch arm64 -shared \
+            -framework Foundation -framework UIKit \
+            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=14.0 \
+            Tweak.m -o BlockSearch.dylib
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlockSearch-dylib
+          path: BlockSearch.dylib
