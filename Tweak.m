@@ -1,45 +1,46 @@
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 
-@interface SearchBlockerView : UIView
+@interface UIWindow (SafeBlockSearch)
 @end
 
-@implementation SearchBlockerView
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    return self;
+@implementation UIWindow (SafeBlockSearch)
+
+- (UIView *)safe_swizzled_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    // וידוא שהחלון מוכן ותקין
+    if (self.hidden || self.alpha <= 0.01) {
+        return [self safe_swizzled_hitTest:point withEvent:event];
+    }
+
+    // בדיקה האם יש חלון מודאלי פתוח (כגון שיתוף / העברת הודעה)
+    BOOL hasModal = NO;
+    UIViewController *root = self.rootViewController;
+    if (root != nil && root.presentedViewController != nil) {
+        hasModal = YES;
+    }
+
+    // אם אנחנו במסך הראשי ללא מסך מודאלי, חוסמים את אזור החיפוש העליון באייפון 11
+    if (!hasModal) {
+        if (point.y >= 44 && point.y <= 140) {
+            // מבטל את המגע - מחזיר nil כדי ששום רכיב לא יקבל את הלחיצה
+            return nil;
+        }
+    }
+
+    return [self safe_swizzled_hitTest:point withEvent:event];
 }
+
 @end
 
-static void applyBlocker(void) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIWindow *keyWindow = nil;
-        for (UIWindow *window in [UIApplication sharedApplication].windows) {
-            if (window.isKeyWindow) {
-                keyWindow = window;
-                break;
-            }
-        }
-        if (!keyWindow && [UIApplication sharedApplication].windows.count > 0) {
-            keyWindow = [UIApplication sharedApplication].windows.firstObject;
-        }
-        
-        if (keyWindow) {
-            CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
-            SearchBlockerView *blocker = [[SearchBlockerView alloc] initWithFrame:CGRectMake(0, 44, screenWidth, 80)];
-            blocker.backgroundColor = [UIColor clearColor];
-            blocker.userInteractionEnabled = YES;
-            blocker.tag = 999988;
-            
-            [[keyWindow viewWithTag:999988] removeFromSuperview];
-            [keyWindow addSubview:blocker];
-        }
-    });
-}
+__attribute__((constructor)) static void initSafeTweak(void) {
+    Class class = [UIWindow class];
+    SEL originalSelector = @selector(hitTest:withEvent:);
+    SEL swizzledSelector = @selector(safe_swizzled_hitTest:withEvent:);
 
-__attribute__((constructor)) static void init(void) {
-    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
-                                                      object:nil
-                                                       queue:[NSOperationQueue mainQueue]
-                                                  usingBlock:^(NSNotification * _Nonnull note) {
-        applyBlocker();
-    }];
+    Method originalMethod = class_getInstanceMethod(class, originalSelector);
+    Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
+
+    if (originalMethod && swizzledMethod) {
+        method_exchangeImplementations(originalMethod, swizzledMethod);
+    }
 }
