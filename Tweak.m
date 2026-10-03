@@ -1,38 +1,64 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-@implementation UIWindow (BlockSearchArea)
+@interface SafeSearchBlockerView : UIView
+@end
 
-- (UIView *)block_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hitView = [self block_hitTest:point withEvent:event];
+@implementation SafeSearchBlockerView
+// בולע כל לחיצה שמגיעה אליו
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    return self;
+}
+@end
+
+@implementation UINavigationBar (BlockSearch)
+
+- (void)custom_layoutSubviews {
+    [self custom_layoutSubviews];
     
-    // אם נפתח חלון מודאלי מעל המסך (שיתוף / העברת הודעה), מאפשרים לחיצות כרגיל
-    UIViewController *root = self.rootViewController;
-    if (root != nil && root.presentedViewController != nil) {
-        return hitView;
+    // בדיקה האם מדובר בבר הראשי של רשימת השיחות
+    // נוודא שאנחנו לא במסך פתיחה (Get Started) או מסך כניסה
+    UIViewController *parentVC = nil;
+    UIResponder *responder = self.nextResponder;
+    while (responder) {
+        if ([responder isKindOfClass:[UIViewController class]]) {
+            parentVC = (UIViewController *)responder;
+            break;
+        }
+        responder = responder.nextResponder;
     }
     
-    // חסימת אזור שורת החיפוש באייפון 11 (מתחת ל-Notch, בין 50 ל-105 פיקסלים)
-    if (point.y >= 50.0 && point.y <= 105.0) {
-        static UIView *dummyView = nil;
-        static dispatch_once_t onceToken;
-        dispatch_once(&onceToken, ^{
-            CGRect zeroRect = (CGRect){{0, 0}, {0, 0}};
-            dummyView = [[UIView alloc] initWithFrame:zeroRect];
-            dummyView.userInteractionEnabled = NO;
-        });
-        return dummyView;
+    // אם הבר שייך למסך מודאלי (כגון שיתוף הודעה), לא נחסום
+    if (parentVC && parentVC.presentingViewController != nil) {
+        UIView *existing = [self viewWithTag:887766];
+        if (existing) {
+            [existing removeFromSuperview];
+        }
+        return;
+    }
+
+    // הגדרת שכבת חסימה מעל אזור שורת החיפוש בתוך ה-Navigation Bar
+    static NSInteger blockerTag = 887766;
+    UIView *blocker = [self viewWithTag:blockerTag];
+    if (!blocker) {
+        blocker = [[SafeSearchBlockerView alloc] initWithFrame:CGRectZero];
+        blocker.tag = blockerTag;
+        blocker.backgroundColor = [UIColor clearColor];
+        blocker.userInteractionEnabled = YES;
+        [self addSubview:blocker];
     }
     
-    return hitView;
+    // כיסוי מדויק של שטח ה-Navigation Bar (שבו ממוקם החיפוש)
+    blocker.frame = self.bounds;
+    [self bringSubviewToFront:blocker];
 }
 
 @end
 
-__attribute__((constructor)) static void initTweak(void) {
-    Class class = [UIWindow class];
-    SEL origSEL = @selector(hitTest:withEvent:);
-    SEL swizSEL = @selector(block_hitTest:withEvent:);
+__attribute__((constructor)) static void initSafeBlocker(void) {
+    Class class = [UINavigationBar class];
+    SEL origSEL = @selector(layoutSubviews);
+    SEL swizSEL = @selector(custom_layoutSubviews);
     
     Method origMethod = class_getInstanceMethod(class, origSEL);
     Method swizMethod = class_getInstanceMethod(class, swizSEL);
