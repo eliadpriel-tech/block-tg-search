@@ -1,68 +1,48 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-@interface SafeSearchBlockerView : UIView
-@end
+@implementation UIWindow (SafeCoordBlock)
 
-@implementation SafeSearchBlockerView
-// בולע כל לחיצה שמגיעה אליו
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    return self;
-}
-@end
+- (UIView *)safe_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [self safe_hitTest:point withEvent:event];
 
-@implementation UINavigationBar (BlockSearch)
+    // בדיקה האם המשתמש כבר מחובר (במסך הראשי יש UITabBarController פעיל)
+    UIViewController *root = self.rootViewController;
+    BOOL isInsideMainApp = NO;
 
-- (void)custom_layoutSubviews {
-    [self custom_layoutSubviews];
-    
-    // בדיקה האם מדובר בבר הראשי של רשימת השיחות
-    UIViewController *parentVC = nil;
-    UIResponder *responder = self.nextResponder;
-    while (responder) {
-        if ([responder isKindOfClass:[UIViewController class]]) {
-            parentVC = (UIViewController *)responder;
-            break;
-        }
-        responder = responder.nextResponder;
-    }
-    
-    // אם הבר שייך למסך מודאלי (כגון שיתוף/העברה), לא נחסום
-    if (parentVC && parentVC.presentingViewController != nil) {
-        UIView *existing = [self viewWithTag:887766];
-        if (existing) {
-            [existing removeFromSuperview];
-        }
-        return;
+    if ([root isKindOfClass:[UITabBarController class]]) {
+        isInsideMainApp = YES;
+    } else if (root.presentedViewController != nil) {
+        // אם נפתח חלון מעל (כמו שיתוף/העברה), לא חוסמים
+        return hitView;
     }
 
-    // הגדרת שכבת חסימה מעל אזור שורת החיפוש בתוך ה-Navigation Bar
-    static NSInteger blockerTag = 887766;
-    UIView *blocker = [self viewWithTag:blockerTag];
-    if (!blocker) {
-        CGRect zeroRect = (CGRect){{0, 0}, {0, 0}};
-        blocker = [[SafeSearchBlockerView alloc] initWithFrame:zeroRect];
-        blocker.tag = blockerTag;
-        blocker.backgroundColor = [UIColor clearColor];
-        blocker.userInteractionEnabled = YES;
-        [self addSubview:blocker];
+    // חוסם רק אם אנחנו בתוך האפליקציה המחוברת ובטווח הגובה של שורת החיפוש באייפון 11
+    if (isInsideMainApp && point.y >= 50.0 && point.y <= 105.0) {
+        // החזרת View שקט בלי לפגוע במבנה הניווט
+        static UIView *dummyView = nil;
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            CGRect zeroRect = (CGRect){{0, 0}, {0, 0}};
+            dummyView = [[UIView alloc] initWithFrame:zeroRect];
+            dummyView.userInteractionEnabled = NO;
+        });
+        return dummyView;
     }
-    
-    // כיסוי מדויק של שטח ה-Navigation Bar
-    blocker.frame = self.bounds;
-    [self bringSubviewToFront:blocker];
+
+    return hitView;
 }
 
 @end
 
-__attribute__((constructor)) static void initSafeBlocker(void) {
-    Class class = [UINavigationBar class];
-    SEL origSEL = @selector(layoutSubviews);
-    SEL swizSEL = @selector(custom_layoutSubviews);
-    
+__attribute__((constructor)) static void initSafeCoordBlock(void) {
+    Class class = [UIWindow class];
+    SEL origSEL = @selector(hitTest:withEvent:);
+    SEL swizSEL = @selector(safe_hitTest:withEvent:);
+
     Method origMethod = class_getInstanceMethod(class, origSEL);
     Method swizMethod = class_getInstanceMethod(class, swizSEL);
-    
+
     if (origMethod && swizMethod) {
         method_exchangeImplementations(origMethod, swizMethod);
     }
