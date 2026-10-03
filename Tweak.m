@@ -1,44 +1,35 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-@interface UIView (BlockTelegramSearch)
+@interface DummyBlockerView : UIView
 @end
 
-@implementation UIView (BlockTelegramSearch)
+@implementation DummyBlockerView
+@end
 
-- (UIView *)custom_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hitView = [self custom_hitTest:point withEvent:event];
+@implementation UIWindow (BlockSearchArea)
+
+- (UIView *)block_hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [self block_hitTest:point withEvent:event];
     
-    if (hitView) {
-        // בודק את שרשרת התצוגות של הרכיב שנלחץ
-        UIView *current = hitView;
-        while (current) {
-            NSString *className = NSStringFromClass([current class]);
-            
-            // זיהוי רכיב החיפוש של טלגרם ברשימת השיחות
-            if ([className containsString:@"SearchBar"] || 
-                [className containsString:@"SearchContentNode"] || 
-                [className containsString:@"ChatListSearch"]) {
-                
-                // בדיקה אם אנחנו בתוך מסך מודאלי (כגון העברת הודעה / Forward)
-                UIResponder *responder = current;
-                while (responder) {
-                    if ([responder isKindOfClass:[UIViewController class]]) {
-                        UIViewController *vc = (UIViewController *)responder;
-                        if (vc.presentingViewController != nil) {
-                            // מאפשר חיפוש בחלון שיתוף/העברה
-                            return hitView;
-                        }
-                        break;
-                    }
-                    responder = responder.nextResponder;
-                }
-                
-                // מבטל את הלחיצה על שורת החיפוש במסך הראשי
-                return nil;
-            }
-            current = current.superview;
-        }
+    // בדיקה האם יש חלון מודאלי פתוח (שיתוף / העברת הודעה)
+    UIViewController *root = self.rootViewController;
+    if (root != nil && root.presentedViewController != nil) {
+        return hitView; // מאפשר שימוש רגיל אם נפתח חלון מעל המסך
+    }
+    
+    // שורת החיפוש של טלגרם באייפון 11 ממוקמת מתחת ל-Notch (בין Y=50 ל-Y=105)
+    // כפתור התחל נמצא בתחתית (מעל Y=600), ורשימת השיחות מתחת ל-Y=105
+    if (point.y >= 50 && point.y <= 105) {
+        static DummyBlockerView *dummyView = nil;
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            dummyView = [[DummyBlockerView alloc] initWithFrame:CGRectZero];
+            dummyView.userInteractionEnabled = NO;
+        });
+        
+        // החזרת View שקט שאינו מקבל אירועים - בולע את הנגיעה מבלי לרסק את ה-hitTest של החלון
+        return dummyView;
     }
     
     return hitView;
@@ -47,9 +38,9 @@
 @end
 
 __attribute__((constructor)) static void initTweak(void) {
-    Class class = [UIView class];
+    Class class = [UIWindow class];
     SEL origSEL = @selector(hitTest:withEvent:);
-    SEL swizSEL = @selector(custom_hitTest:withEvent:);
+    SEL swizSEL = @selector(block_hitTest:withEvent:);
     
     Method origMethod = class_getInstanceMethod(class, origSEL);
     Method swizMethod = class_getInstanceMethod(class, swizSEL);
